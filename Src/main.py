@@ -36,7 +36,8 @@ from sklearn.ensemble import RandomForestClassifier
 #不断增大基分类器数量，查看分类准确率变换过程，寻找最佳的基分类器数
 from sklearn.model_selection import cross_val_score
 score_lst = []
-n = 200
+# 修改分类器数量
+n = 20
 for i in range(n):
     rfc = RandomForestClassifier(n_estimators=i+1)
     rfc_score = cross_val_score(rfc,X_train,y_train).mean()  #cv=10
@@ -49,7 +50,7 @@ print('最佳得分为{}，对应的基分类器数量为{}'.format(max(score_ls
 import matplotlib.pyplot as plt
 plt.rcParams['font.sans-serif']=['Simhei']#正常显示中文
 plt.figure(figsize=[20,5])
-plt.plot(x=range(1,n+1),y=score_lst)
+plt.plot(range(1,n+1),score_lst)
 plt.xlabel('基分类器数量k')
 plt.ylabel('模型预测准确率')
 plt.show()
@@ -117,3 +118,45 @@ plt.xlabel('Importances')
 plt.xlim(0, 0.5)
 plt.title('Features Importances')
 plt.show()
+
+#模型评估
+score = cross_val_score(estimator=rfc, X=X_test,y=y_test,scoring='accuracy',cv=3)#进行3次交叉验证，得到3个精确度得分
+print(score)
+print(score.mean())
+print ('测试集准确率',rfc.score(X_train,y_train))
+print ('测试集准确率',rfc.score(X_test,y_test))
+from sklearn.metrics import classification_report
+y_predict = rfc.predict(X_test)
+print (classification_report(y_predict,y_test))
+
+
+#根据第一次随机森林得到的特征重要性，筛选重要特征构建第二个随机森林
+from sklearn.feature_selection import SelectFromModel
+threshold = min(feature_importance_df['importance'])+0.01#可以人为设置特征重要性的阈值，阈值越大，最终生成的新决策树被保留的特征越少
+rfe = SelectFromModel(estimator=rfc,threshold=threshold)
+'''
+estimator:一个已经拟合好的基分类器，这里是第一次生成的随机森林，SelectFromModel将对该分类器进行完善，仅保留重要性大于threshold的特征
+'''
+rfe.fit(X_train, y_train)
+X_train_new = rfe.transform(X_train)
+X_test_new = rfe.transform(X_test)
+'''
+在选择好大于阈值的特征后，使用SelectFromModel类中的transform()方法，将X（特征集）进行变换，仅保留被选中的特征。
+----Reduce X to the selected features.
+转换后的特征集数据格式为ndarray，没有表头。
+'''
+#依然使用最开始得到的最佳基分类器数量，构建新的随机森林
+rfc_new = RandomForestClassifier(n_estimators=k,random_state=2,oob_score=True)
+rfc_new.fit(X_train_new, y_train)#重新拟合随机森林
+#模型评价
+print('选取SelectFromModel特征之后的训练结果：', rfc_new.score(X_train_new, y_train))
+print('选取SelectFromModel特征之后的准确性：', rfc_new.score(X_test_new, y_test))
+'''
+可以发现，即使删除了几个特征，整体的分类准确率并没有降低，那些特征是真的该删！
+'''
+print (rfc.oob_score_)
+score = cross_val_score(estimator=rfc, X=X_test_new,y=y_test,scoring='accuracy',cv=3)#进行3次交叉验证，得到3个精确度得分
+print(score)
+print(score.mean())
+y_predict_new = rfc_new.predict(X_test_new)
+print (classification_report(y_predict_new,y_test))
